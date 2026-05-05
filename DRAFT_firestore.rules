@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'createdAt']) &&
+        data.uid == request.auth.uid &&
+        data.createdAt is number &&
+        (data.name == null || (data.name is string && data.name.size() <= 100)) &&
+        (data.email == null || (data.email is string && data.email.size() <= 100)) &&
+        (data.location == null || (data.location is string && data.location.size() <= 100)) &&
+        (data.phone == null || (data.phone is string && data.phone.size() <= 20));
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && isValidUser(incoming()) && incoming().createdAt == request.time.toMillis();
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) && incoming().uid == existing().uid && incoming().createdAt == existing().createdAt && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'location', 'phone']);
+    }
+
+    function isValidDoctor(data) {
+      return data.keys().hasAll(['name', 'hospital', 'fees']) &&
+        data.name is string && data.name.size() <= 100 &&
+        data.hospital is string && data.hospital.size() <= 100 &&
+        data.fees is number &&
+        (data.qualifications == null || (data.qualifications is string && data.qualifications.size() <= 200)) &&
+        (data.rating == null || data.rating is number) &&
+        (data.reviews == null || data.reviews is number) &&
+        (data.wait == null || (data.wait is string && data.wait.size() <= 50)) &&
+        (data.slots == null || (data.slots is string && data.slots.size() <= 50)) &&
+        (data.availableMsg == null || (data.availableMsg is string && data.availableMsg.size() <= 50)) &&
+        (data.isAvailable == null || data.isAvailable is bool) &&
+        (data.avatarBg == null || (data.avatarBg is string && data.avatarBg.size() <= 50)) &&
+        (data.avatarEmoji == null || (data.avatarEmoji is string && data.avatarEmoji.size() <= 10)) &&
+        (data.categories == null || (data.categories is list && data.categories.size() <= 10 && (data.categories.size() == 0 || data.categories[0] is string)));
+    }
+
+    match /doctors/{doctorId} {
+      // Allow read for everyone (to list doctors app)
+      allow read: if true;
+      allow create: if false; // Admin only in real life
+      allow update: if false; // Admin only in real life
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['userId', 'doctorId', 'status', 'createdAt', 'updatedAt']) &&
+        data.userId == request.auth.uid &&
+        data.doctorId is string && data.doctorId.size() <= 128 &&
+        data.status is string && data.status in ['upcoming', 'completed', 'cancelled'] &&
+        data.createdAt is number &&
+        data.updatedAt is number &&
+        (data.patientName == null || (data.patientName is string && data.patientName.size() <= 100)) &&
+        (data.patientAge == null || data.patientAge is number) &&
+        (data.symptoms == null || (data.symptoms is string && data.symptoms.size() <= 500)) &&
+        (data.tokenNumber == null || (data.tokenNumber is string && data.tokenNumber.size() <= 20));
+    }
+
+    match /bookings/{bookingId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(bookingId) && isValidBooking(incoming()) && incoming().createdAt == request.time.toMillis() && incoming().updatedAt == request.time.toMillis() && exists(/databases/$(database)/documents/doctors/$(incoming().doctorId));
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && isValidBooking(incoming()) && incoming().userId == existing().userId && incoming().doctorId == existing().doctorId && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time.toMillis() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+    }
+  }
+}

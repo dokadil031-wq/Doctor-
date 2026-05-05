@@ -1,0 +1,6 @@
+{
+  "name": "Doctors App",
+  "description": "Book appointments with local doctors quickly.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}
